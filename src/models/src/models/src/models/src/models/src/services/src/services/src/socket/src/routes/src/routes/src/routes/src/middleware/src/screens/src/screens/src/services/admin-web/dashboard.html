@@ -369,4 +369,137 @@
                     <table class="table table-bordered">
                         <thead>
                             <tr><th>Bus Number</th><th>Model</th><th>Capacity</th><th>Status</th><th>Actions</th></tr>
-                        </
+                        </thead>
+                        <tbody>
+                            ${buses.map(bus => `
+                                <tr>
+                                    <td>${bus.busNumber}</td>
+                                    <td>${bus.model || '-'}</td>
+                                    <td>${bus.capacity}</td>
+                                    <td><span class="online-dot"></span> ${bus.status}</td>
+                                    <td>
+                                        <button class="btn btn-sm btn-info" onclick="editBus('${bus._id}')">Edit</button>
+                                        <button class="btn btn-sm btn-danger" onclick="deleteBus('${bus._id}')">Delete</button>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                `;
+                document.getElementById('busesList').innerHTML = html;
+                
+            } catch (error) {
+                console.error('Error loading buses:', error);
+            }
+        }
+        
+        function showRoutes() {
+            const html = `
+                <h2>Manage Routes</h2>
+                <button class="btn btn-primary mb-3" onclick="showAddRouteModal()">+ Add Route</button>
+                <div id="routesList"></div>
+            `;
+            document.getElementById('mainContent').innerHTML = html;
+            loadRoutesList();
+        }
+        
+        async function loadRoutesList() {
+            try {
+                const response = await axios.get(`${API_URL}/admin/routes`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                const routes = response.data;
+                
+                const html = `
+                    <table class="table table-bordered">
+                        <thead>
+                            <tr><th>Route Name</th><th>Code</th><th>Distance (km)</th><th>Fare</th><th>Stops</th> </tr>
+                        </thead>
+                        <tbody>
+                            ${routes.map(route => `
+                                <tr>
+                                    <td>${route.routeName}</td>
+                                    <td>${route.routeCode}</td>
+                                    <td>${route.totalDistance}</td>
+                                    <td>R${route.fare}</td>
+                                    <td>${route.stops.length}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                `;
+                document.getElementById('routesList').innerHTML = html;
+                
+            } catch (error) {
+                console.error('Error loading routes:', error);
+            }
+        }
+        
+        function showAlerts() {
+            const html = `
+                <h2>Manage Alerts</h2>
+                <button class="btn btn-warning mb-3" onclick="showCreateAlertModal()">+ Create Alert</button>
+                <div id="alertsList"></div>
+            `;
+            document.getElementById('mainContent').innerHTML = html;
+            loadAllAlerts();
+        }
+        
+        async function loadAllAlerts() {
+            try {
+                const response = await axios.get(`${API_URL}/admin/alerts`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                const alerts = response.data;
+                
+                const html = alerts.map(alert => `
+                    <div class="alert-item alert-${alert.severity}">
+                        <strong>${alert.title}</strong>
+                        <span class="badge bg-secondary float-end">${alert.type}</span>
+                        <p>${alert.message}</p>
+                        <small>${new Date(alert.createdAt).toLocaleString()}</small>
+                        ${!alert.isResolved ? `<button class="btn btn-sm btn-success mt-2" onclick="resolveAlert('${alert._id}')">Resolve</button>` : '<span class="badge bg-success">Resolved</span>'}
+                    </div>
+                `).join('');
+                
+                document.getElementById('alertsList').innerHTML = html || '<p>No alerts</p>';
+                
+            } catch (error) {
+                console.error('Error loading alerts:', error);
+            }
+        }
+        
+        function showNotification(alert) {
+            if (Notification.permission === 'granted') {
+                new Notification(alert.title, { body: alert.message });
+            }
+        }
+        
+        function trackBus(busId) {
+            window.location.href = `/track.html?busId=${busId}`;
+        }
+        
+        function startAutoRefresh() {
+            if (refreshInterval) clearInterval(refreshInterval);
+            refreshInterval = setInterval(() => {
+                if (document.getElementById('map')) {
+                    loadActiveBuses();
+                    loadAlerts();
+                }
+            }, 30000);
+        }
+        
+        function logout() {
+            localStorage.removeItem('adminToken');
+            showLogin();
+            if (refreshInterval) clearInterval(refreshInterval);
+            if (socket) socket.disconnect();
+        }
+        
+        // Request notification permission
+        if (Notification.permission === 'default') {
+            Notification.requestPermission();
+        }
+    </script>
+</body>
+</html>
