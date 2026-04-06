@@ -9,39 +9,33 @@ let buses = [
   { id: 2, name: "Thohoyandou Bus", latitude: -22.980, longitude: 30.450, status: "Running" }
 ];
 
+// Route path
+let route = [
+  [-22.976, 30.446],
+  [-22.978, 30.448],
+  [-22.979, 30.449],
+  [-22.980, 30.450]
+];
+
+// Bus stops
+let stops = [
+  { name: "UNIVEN Gate", lat: -22.976, lng: 30.446 },
+  { name: "Shopping Center", lat: -22.978, lng: 30.448 },
+  { name: "Taxi Rank", lat: -22.979, lng: 30.449 },
+  { name: "Thohoyandou CBD", lat: -22.980, lng: 30.450 }
+];
+
 let admin = { username: "admin", password: "1234" };
 
 // ================= HOME =================
 app.get("/", (req, res) => {
   res.send(`
   <html>
-  <head>
-    <style>
-      body { font-family: Arial; margin:0; }
-      .hero {
-        background:black;
-        color:white;
-        padding:40px;
-        text-align:center;
-      }
-      .btn {
-        padding:15px;
-        margin:10px;
-        border:none;
-        background:#000;
-        color:#fff;
-        width:200px;
-        cursor:pointer;
-      }
-    </style>
-  </head>
-  <body>
-    <div class="hero">
-      <h1>🚍 Limpopo Smart Transport</h1>
-      <p>Uber-Style Bus Tracking System</p>
-      <a href="/map"><button class="btn">Track Buses</button></a>
-      <a href="/login"><button class="btn">Admin Panel</button></a>
-    </div>
+  <body style="font-family:Arial;text-align:center;background:black;color:white;">
+    <h1>🚍 Limpopo Smart Transport</h1>
+    <p>Uber-Style Bus Tracking</p>
+    <a href="/map"><button style="padding:15px;">Track Buses</button></a>
+    <a href="/login"><button style="padding:15px;">Admin</button></a>
   </body>
   </html>
   `);
@@ -52,9 +46,11 @@ app.get("/map", (req, res) => {
   res.send(`
   <html>
   <head>
-    <script src="https://maps.googleapis.com/maps/api/js?key=YOUR_API_KEY"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
     <style>
-      body { margin:0; font-family: Arial; }
+      body { margin:0; font-family:Arial; }
       #map { height:100vh; }
 
       .panel {
@@ -64,7 +60,6 @@ app.get("/map", (req, res) => {
         background:white;
         padding:15px;
         border-radius:10px;
-        box-shadow:0 0 10px rgba(0,0,0,0.3);
       }
     </style>
   </head>
@@ -73,23 +68,41 @@ app.get("/map", (req, res) => {
     <div id="map"></div>
 
     <div class="panel">
-      <h3>Nearby Buses</h3>
+      <h3>🚌 Live Buses</h3>
       <div id="list"></div>
     </div>
 
     <script>
-      let map;
+      let map = L.map('map').setView([-22.976, 30.446], 14);
+
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+      // Custom bus icon
+      let busIcon = L.icon({
+        iconUrl: 'https://cdn-icons-png.flaticon.com/512/61/61231.png',
+        iconSize: [30, 30]
+      });
+
+      // Route
+      let route = ${JSON.stringify(route)};
+      L.polyline(route, {color: 'blue'}).addTo(map);
+
+      // Stops
+      let stops = ${JSON.stringify(stops)};
+      stops.forEach(stop => {
+        L.marker([stop.lat, stop.lng])
+          .addTo(map)
+          .bindPopup("📍 " + stop.name);
+      });
+
       let markers = [];
 
-      function initMap() {
-        map = new google.maps.Map(document.getElementById("map"), {
-          zoom: 14,
-          center: { lat: -22.976, lng: 30.446 },
-          styles: [{ stylers: [{ saturation: -100 }] }]
-        });
-
-        load();
-        setInterval(load, 3000);
+      function calculateETA(busLat, busLng, stopLat, stopLng) {
+        let distance = Math.sqrt(
+          Math.pow(stopLat - busLat, 2) + 
+          Math.pow(stopLng - busLng, 2)
+        );
+        return Math.round(distance * 1000); // fake minutes
       }
 
       function load() {
@@ -97,27 +110,39 @@ app.get("/map", (req, res) => {
         .then(res => res.json())
         .then(data => {
 
-          markers.forEach(m => m.setMap(null));
+          markers.forEach(m => map.removeLayer(m));
           markers = [];
 
           list.innerHTML = "";
 
           data.forEach(bus => {
-            let marker = new google.maps.Marker({
-              position: { lat: bus.latitude, lng: bus.longitude },
-              map: map,
-              icon: "https://maps.google.com/mapfiles/ms/icons/blue-dot.png"
-            });
+
+            let marker = L.marker([bus.latitude, bus.longitude], {icon: busIcon})
+              .addTo(map);
+
+            // Calculate ETA to last stop
+            let lastStop = stops[stops.length - 1];
+            let eta = calculateETA(bus.latitude, bus.longitude, lastStop.lat, lastStop.lng);
+
+            marker.bindPopup(
+              "🚍 " + bus.name + 
+              "<br>Status: " + bus.status +
+              "<br>ETA: " + eta + " mins"
+            );
 
             markers.push(marker);
 
-            list.innerHTML += "<p>🚍 " + bus.name + "</p>";
+            list.innerHTML += 
+              "<p>🚍 " + bus.name + " - ETA: " + eta + " mins</p>";
           });
+
         });
       }
 
-      window.onload = initMap;
+      load();
+      setInterval(load, 3000);
     </script>
+
   </body>
   </html>
   `);
@@ -126,11 +151,10 @@ app.get("/map", (req, res) => {
 // ================= LOGIN =================
 app.get("/login", (req, res) => {
   res.send(`
-  <html>
-  <body style="font-family:Arial;text-align:center;padding-top:100px;">
+  <body style="text-align:center;font-family:Arial;">
     <h2>Admin Login</h2>
-    <input id="u" placeholder="Username"><br><br>
-    <input id="p" type="password" placeholder="Password"><br><br>
+    <input id="u"><br><br>
+    <input id="p" type="password"><br><br>
     <button onclick="login()">Login</button>
 
     <script>
@@ -151,7 +175,6 @@ app.get("/login", (req, res) => {
       }
     </script>
   </body>
-  </html>
   `);
 });
 
@@ -162,31 +185,24 @@ app.get("/dashboard", (req, res) => {
   <head>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   </head>
-
-  <body style="font-family:Arial;">
+  <body>
     <h2>📊 Fleet Dashboard</h2>
-
-    <canvas id="chart" width="400" height="200"></canvas>
+    <canvas id="chart"></canvas>
 
     <script>
       fetch('/api/buses')
       .then(res=>res.json())
       .then(data=>{
-
-        let labels = data.map(b => b.name);
-        let values = data.map(b => Math.random()*10);
-
         new Chart(document.getElementById("chart"), {
           type: 'bar',
           data: {
-            labels: labels,
+            labels: data.map(b=>b.name),
             datasets: [{
-              label: 'Bus Activity',
-              data: values
+              label: 'Activity',
+              data: data.map(()=>Math.random()*10)
             }]
           }
         });
-
       });
     </script>
   </body>
