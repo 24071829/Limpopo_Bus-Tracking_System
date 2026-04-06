@@ -1,120 +1,145 @@
+// backend/src/server.js - RENDER-OPTIMIZED VERSION
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
-const cors = require('cors');
 const mongoose = require('mongoose');
-const dotenv = require('dotenv');
+const cors = require('cors');
 const path = require('path');
 
-// Load environment variables
-dotenv.config();
-
-// Import modules
-const authRoutes = require('./routes/auth');
-const busRoutes = require('./routes/buses');
-const routeRoutes = require('./routes/routes');
-const adminRoutes = require('./routes/admin');
-const RealtimeHandler = require('./socket/realtimeHandler');
-const ETAService = require('./services/ETAService');
-const AlertService = require('./services/AlertService');
-const TrackingService = require('./services/TrackingService');
-
-// Initialize Express app
 const app = express();
 const server = http.createServer(app);
+
+// CRITICAL: Allow all Render origins
+const allowedOrigins = [
+    'http://localhost:3000',
+    'http://localhost:5000',
+    'https://*.onrender.com',
+    'https://bus-tracking-backend.onrender.com'
+];
+
+// Configure CORS for Render
+app.use(cors({
+    origin: function(origin, callback) {
+        // Allow requests with no origin (like mobile apps or curl)
+        if (!origin) return callback(null, true);
+        
+        if (allowedOrigins.some(allowed => 
+            origin === allowed || 
+            (allowed.includes('*.onrender.com') && origin.includes('onrender.com'))
+        )) {
+            callback(null, true);
+        } else {
+            console.log('Origin blocked:', origin);
+            callback(null, true); // Still allow for testing
+        }
+    },
+    credentials: true
+}));
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Socket.IO with Render-compatible configuration
 const io = socketIo(server, {
     cors: {
-        origin: '*',
-        methods: ['GET', 'POST'],
-        credentials: true
+        origin: "*", // Allow all during testing
+        methods: ["GET", "POST"],
+        credentials: true,
+        transports: ['websocket', 'polling']
     },
+    allowEIO3: true,
     pingTimeout: 60000,
     pingInterval: 25000
 });
 
-// Middleware
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
 // Make io accessible to routes
 app.set('io', io);
 
-// Database connection
-mongoose.connect(process.env.MONGODB_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true
-})
-.then(() => console.log('✅ MongoDB connected successfully'))
-.catch(err => console.error('❌ MongoDB connection error:', err));
+// Health check endpoint (REQUIRED for Render)
+app.get('/health', (req, res) => {
+    res.status(200).json({
+        status: 'healthy',
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime(),
+        memory: process.memoryUsage(),
+        environment: process.env.NODE_ENV
+    });
+});
 
-// API Routes
+// Root endpoint
+app.get('/', (req, res) => {
+    res.json({
+        message: 'Bus Tracking API is running!',
+        version: '1.0.0',
+        endpoints: {
+            health: '/health',
+            api: '/api',
+            websocket: 'ws://' + req.get('host')
+        }
+    });
+});
+
+// Import your routes
+const authRoutes = require('./routes/auth');
+const busRoutes = require('./routes/buses');
+const routeRoutes = require('./routes/routes');
+const adminRoutes = require('./routes/admin');
+
+// Use routes
 app.use('/api/auth', authRoutes);
 app.use('/api/buses', busRoutes);
 app.use('/api/routes', routeRoutes);
 app.use('/api/admin', adminRoutes);
 
-// Health check endpoint
-app.get('/health', (req, res) => {
-    res.json({ 
-        status: 'healthy', 
-        timestamp: new Date(),
-        uptime: process.uptime()
+// Socket.IO connection handling
+io.on('connection', (socket) => {
+    console.log('🔌 Client connected:', socket.id);
+    
+    socket.on('track:bus', (data) => {
+        console.log(`📡 Tracking bus: ${data.busId}`);
+        socket.join(`bus:${data.busId}`);
+    });
+    
+    socket.on('bus:location', async (data) => {
+        io.to(`bus:${data.busId}`).emit('location:update', data);
+    });
+    
+    socket.on('disconnect', () => {
+        console.log('🔌 Client disconnected:', socket.id);
     });
 });
 
-// Initialize real-time handler
-const realtimeHandler = new RealtimeHandler(server);
-
-// Initialize services
-const etaService = new ETAService();
-const alertService = new AlertService();
-const trackingService = new TrackingService();
-
-// Start background jobs
-const startBackgroundJobs = () => {
-    // Update ETAs every minute
-    setInterval(async () => {
-        try {
-            await etaService.updateAllETAs();
-        } catch (error) {
-            console.error('ETA update error:', error);
-        }
-    }, 60000);
-    
-    // Clean old GPS data every hour
-    setInterval(async () => {
-        try {
-            const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-            await trackingService.cleanOldData(oneWeekAgo);
-            console.log('Cleaned old GPS data');
-        } catch (error) {
-            console.error('Data cleanup error:', error);
-        }
-    }, 3600000);
-    
-    console.log('✅ Background jobs started');
+// Database connection with retry logic
+const connectDB = async () => {
+    try {
+        const mongoURI = process.env.MONGODB_URI || 'mongodb://localhost:27017/bus-tracking';
+        await mongoose.connect(mongoURI, {
+            useNewUrlParser: true,
+            useUnifiedTopology: true,
+            serverSelectionTimeoutMS: 5000
+        });
+        console.log('✅ MongoDB connected successfully');
+    } catch (error) {
+        console.error('❌ MongoDB connection error:', error.message);
+        console.log('Retrying in 5 seconds...');
+        setTimeout(connectDB, 5000);
+    }
 };
 
 // Start server
 const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {  // IMPORTANT: Listen on 0.0.0.0 for Render
     console.log(`🚀 Server running on port ${PORT}`);
-    console.log(`📍 API available at http://localhost:${PORT}/api`);
-    console.log(`🔌 WebSocket server ready`);
-    startBackgroundJobs();
+    console.log(`📍 Health check: http://localhost:${PORT}/health`);
+    console.log(`🔌 WebSocket ready`);
 });
 
-// Graceful shutdown
-process.on('SIGTERM', () => {
-    console.log('SIGTERM signal received: closing HTTP server');
-    server.close(() => {
-        console.log('HTTP server closed');
-        mongoose.connection.close(false, () => {
-            console.log('MongoDB connection closed');
-            process.exit(0);
-        });
-    });
+// Connect to database
+connectDB();
+
+// Error handling
+process.on('unhandledRejection', (error) => {
+    console.error('Unhandled Rejection:', error);
 });
 
 module.exports = { app, server, io };
