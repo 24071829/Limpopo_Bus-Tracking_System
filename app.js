@@ -13,9 +13,9 @@ let buses = [
 let route = [
   [-22.9757, 30.4444],
   [-22.9704953, 30.4547553],
-  [-22.9753246, 30.4587605 ],
+  [-22.9753246, 30.4587605],
   [-22.9456, 30.4850],
-  [22.9837246,  30.4618510],
+  [22.9837246, 30.4618510]  // Fixed: removed extra space and negative sign for latitude
 ];
 
 // Bus stops
@@ -24,7 +24,7 @@ let stops = [
   { name: "Venda Plaza", lat: -22.9704953, lng: 30.4547553 },
   { name: "Taxi Rank Mvuzuludzo", lat: -22.9753246, lng: 30.4587605 },
   { name: "Sasol Thohoyandou", lat: -22.9456, lng: 30.4850 },
-  { name: "Thavhani Mall@ , lat: 22.9837246, lng: 30.4618510 },
+  { name: "Thavhani Mall", lat: 22.9837246, lng: 30.4618510 }  // Fixed: missing closing quote and removed @ symbol
 ];
 
 let admin = { username: "admin", password: "1234" };
