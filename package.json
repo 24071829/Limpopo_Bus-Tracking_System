@@ -1,0 +1,12 @@
+{
+  "name": "bus-tracking-app",
+  "version": "1.0.0",
+  "description": "Limpopo Bus Tracking System",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}
