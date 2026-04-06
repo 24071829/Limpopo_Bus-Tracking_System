@@ -35,6 +35,7 @@ app.get("/", (req, res) => {
   <html>
   <body style="font-family:Arial;text-align:center;background:black;color:white;">
     <h1>🚍 Limpopo Smart Transport</h1>
+      <p>Uber-Style Bus Tracking</p>
     <a href="/map"><button style="padding:15px;">Track Buses</button></a>
     <a href="/login"><button style="padding:15px;">Admin</button></a>
   </body>
