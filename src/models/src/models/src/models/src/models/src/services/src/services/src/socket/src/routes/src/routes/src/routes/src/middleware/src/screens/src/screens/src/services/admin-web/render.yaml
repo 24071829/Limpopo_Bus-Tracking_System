@@ -1,0 +1,27 @@
+# render.yaml - Simplified for Node.js backend only
+services:
+  # Backend API Service - This is all you need!
+  - type: web
+    name: bus-tracking-backend
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node src/server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 5000
+      - key: JWT_SECRET
+        generateValue: true
+      - key: MONGODB_URI
+        sync: false  # You'll add this manually in Render dashboard
+      - key: GOOGLE_MAPS_API_KEY
+        sync: false
+      - key: FRONTEND_URL
+        value: https://your-admin-frontend.onrender.com  # Update after deploy
+
+# Optional: Add database if using Render PostgreSQL
+# databases:
+#   - name: bus-tracking-db
+#     plan: free
