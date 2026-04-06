@@ -173,3 +173,41 @@ class RealtimeHandler {
         // Create speeding alert
         const alert = {
             busId: busId,
+            type: 'speeding',
+            severity: speed > 100 ? 'high' : 'medium',
+            title: 'Speeding Alert',
+            message: `Bus ${bus.busNumber} is speeding at ${speed} km/h`,
+            location: location,
+            createdBy: null // Auto-generated
+        };
+        
+        // In production, call AlertService.createAlert(alert)
+        console.log(`⚠️ Speeding alert for bus ${bus.busNumber}: ${speed} km/h`);
+        
+        // Notify admins
+        this.io.to('admin:room').emit('alert:speeding', alert);
+    }
+
+    handleDisconnect(socket) {
+        // Find and remove bus connection
+        for (const [key, value] of this.activeConnections.entries()) {
+            if (value === socket.id || (value.socketId === socket.id)) {
+                this.activeConnections.delete(key);
+                console.log(`❌ Bus ${key} disconnected`);
+                
+                // Update bus status
+                Bus.findByIdAndUpdate(key, { status: 'inactive' }).catch(console.error);
+                break;
+            }
+        }
+        
+        console.log(`🔌 Client disconnected: ${socket.id}`);
+    }
+
+    isValidLocation(latitude, longitude) {
+        return latitude >= -90 && latitude <= 90 &&
+               longitude >= -180 && longitude <= 180;
+    }
+}
+
+module.exports = RealtimeHandler;
