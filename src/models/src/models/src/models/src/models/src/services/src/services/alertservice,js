@@ -1,0 +1,231 @@
+const Alert = require('../models/Alert');
+const User = require('../models/User');
+const Bus = require('../models/Bus');
+const nodemailer = require('nodemailer');
+const admin = require('firebase-admin');
+
+class AlertService {
+    constructor() {
+        // Initialize Firebase if credentials exist
+        if (process.env.FIREBASE_PROJECT_ID) {
+            try {
+                admin.initializeApp({
+                    credential: admin.credential.applicationDefault(),
+                    projectId: process.env.FIREBASE_PROJECT_ID
+                });
+            } catch (error) {
+                console.log('Firebase not initialized (already done)');
+            }
+        }
+        
+        // Email transporter
+        this.transporter = nodemailer.createTransport({
+            host: process.env.SMTP_HOST,
+            port: process.env.SMTP_PORT,
+            secure: false,
+            auth: {
+                user: process.env.SMTP_USER,
+                pass: process.env.SMTP_PASS
+            }
+        });
+    }
+
+    async createAlert(alertData) {
+        try {
+            const alert = new Alert({
+                busId: alertData.busId,
+                routeId: alertData.routeId,
+                type: alertData.type,
+                severity: alertData.severity,
+                title: alertData.title,
+                message: alertData.message,
+                location: alertData.location,
+                affectedStops: alertData.affectedStops || [],
+                estimatedDuration: alertData.estimatedDuration,
+                createdBy: alertData.createdBy
+            });
+            
+            await alert.save();
+            
+            // Send notifications to affected users
+            await this.notifyAffectedUsers(alert);
+            
+            // Update bus status if needed
+            if (alertData.type === 'breakdown' || alertData.type === 'accident') {
+                await Bus.findByIdAndUpdate(alertData.busId, { 
+                    status: 'maintenance',
+                    delayMinutes: alertData.estimatedDuration || 30
+                });
+            }
+            
+            return alert;
+            
+        } catch (error) {
+            console.error('Error creating alert:', error);
+            throw error;
+        }
+    }
+
+    async notifyAffectedUsers(alert) {
+        try {
+            let users = [];
+            
+            // Get users tracking affected bus
+            if (alert.busId) {
+                const busTrackers = await this.getBusTrackers(alert.busId);
+                users.push(...busTrackers);
+            }
+            
+            // Get users on affected route
+            if (alert.routeId) {
+                const routeUsers = await this.getRouteUsers(alert.routeId);
+                users.push(...routeUsers);
+            }
+            
+            // Remove duplicates
+            users = [...new Map(users.map(u => [u._id.toString(), u])).values()];
+            
+            // Send notifications
+            for (const user of users) {
+                await this.sendNotificationToUser(user, alert);
+            }
+            
+            console.log(`Sent alerts to ${users.length} users`);
+            
+        } catch (error) {
+            console.error('Error notifying users:', error);
+        }
+    }
+
+    async getBusTrackers(busId) {
+        // In production, maintain a list of users tracking each bus
+        // For now, return users who have interacted with this bus
+        return await User.find({ 
+            isActive: true,
+            userType: 'passenger'
+        }).limit(100);
+    }
+
+    async getRouteUsers(routeId) {
+        return await User.find({ 
+            isActive: true,
+            userType: 'passenger'
+        }).limit(100);
+    }
+
+    async sendNotificationToUser(user, alert) {
+        const notificationData = {
+            title: alert.title,
+            body: alert.message,
+            data: {
+                alertId: alert._id.toString(),
+                type: alert.type,
+                severity: alert.severity
+            }
+        };
+        
+        // Send push notification if FCM token exists
+        if (user.fcmToken && user.notificationPreferences.push) {
+            try {
+                await admin.messaging().send({
+                    token: user.fcmToken,
+                    notification: {
+                        title: notificationData.title,
+                        body: notificationData.body
+                    },
+                    data: notificationData.data
+                });
+            } catch (error) {
+                console.error(`Failed to send push to ${user.email}:`, error);
+            }
+        }
+        
+        // Send email if preferred
+        if (user.email && user.notificationPreferences.email) {
+            await this.sendEmailNotification(user.email, alert);
+        }
+    }
+
+    async sendEmailNotification(email, alert) {
+        const severityColors = {
+            low: '#27ae60',
+            medium: '#f39c12',
+            high: '#e67e22',
+            critical: '#e74c3c'
+        };
+        
+        const html = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <style>
+                    body { font-family: Arial, sans-serif; }
+                    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                    .header { background: ${severityColors[alert.severity]}; color: white; padding: 20px; text-align: center; }
+                    .content { padding: 20px; background: #f4f4f4; }
+                    .alert-box { background: white; padding: 15px; border-left: 4px solid ${severityColors[alert.severity]}; margin: 15px 0; }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="header">
+                        <h2>🚌 Bus Tracking Alert</h2>
+                    </div>
+                    <div class="content">
+                        <div class="alert-box">
+                            <h3>${alert.title}</h3>
+                            <p>${alert.message}</p>
+                            <p><strong>Type:</strong> ${alert.type}</p>
+                            <p><strong>Severity:</strong> ${alert.severity.toUpperCase()}</p>
+                            <p><strong>Time:</strong> ${new Date().toLocaleString()}</p>
+                        </div>
+                        <p>Open the app for more details and real-time updates.</p>
+                    </div>
+                </div>
+            </body>
+            </html>
+        `;
+        
+        try {
+            await this.transporter.sendMail({
+                from: process.env.SMTP_FROM,
+                to: email,
+                subject: `Bus Alert: ${alert.title}`,
+                html: html
+            });
+        } catch (error) {
+            console.error(`Failed to send email to ${email}:`, error);
+        }
+    }
+
+    async getActiveAlerts(busId = null, routeId = null) {
+        const query = { isResolved: false };
+        if (busId) query.busId = busId;
+        if (routeId) query.routeId = routeId;
+        
+        return await Alert.find(query)
+            .sort({ createdAt: -1 })
+            .populate('busId', 'busNumber')
+            .populate('routeId', 'routeName');
+    }
+
+    async resolveAlert(alertId, resolvedBy) {
+        const alert = await Alert.findByIdAndUpdate(
+            alertId,
+            { 
+                isResolved: true, 
+                resolvedAt: new Date(),
+                resolvedBy: resolvedBy
+            },
+            { new: true }
+        );
+        
+        if (alert && alert.busId) {
+            await Bus.findByIdAndUpdate(alert.busId, { delayMinutes: 0 });
+        }
+        
+        return alert;
+    }
+}
+
+module.exports = AlertService;
