@@ -11,18 +11,20 @@ let buses = [
 
 // Route path
 let route = [
-  [-22.976, 30.446],
-  [-22.978, 30.448],
-  [-22.979, 30.449],
-  [-22.980, 30.450]
+  [-22.9757, 30.4444],
+  [-22.9704953, 30.4547553],
+  [-22.9753246, 30.4587605 ],
+  [-22.9456, 30.4850],
+  [22.9837246,  30.4618510]
 ];
 
 // Bus stops
 let stops = [
-  { name: "UNIVEN Gate", lat: -22.976, lng: 30.446 },
-  { name: "Shopping Center", lat: -22.978, lng: 30.448 },
-  { name: "Taxi Rank", lat: -22.979, lng: 30.449 },
-  { name: "Thohoyandou CBD", lat: -22.980, lng: 30.450 }
+  { name: "UNIVEN Main Gate", lat: -22.9757, lng: 30.4444 },
+  { name: "Venda Plaza", lat: -22.9704953, lng: 30.4547553 },
+  { name: "Taxi Rank Mvuzuludzo", lat: -22.9753246, lng: 30.4587605 },
+  { name: "Sasol Thohoyandou", lat: -22.9456, lng: 30.4850 },
+  { name: "Thavhani Mall@ , lat: 22.9837246, lng: 30.4618510 }
 ];
 
 let admin = { username: "admin", password: "1234" };
@@ -33,7 +35,6 @@ app.get("/", (req, res) => {
   <html>
   <body style="font-family:Arial;text-align:center;background:black;color:white;">
     <h1>🚍 Limpopo Smart Transport</h1>
-    <p>Uber-Style Bus Tracking</p>
     <a href="/map"><button style="padding:15px;">Track Buses</button></a>
     <a href="/login"><button style="padding:15px;">Admin</button></a>
   </body>
